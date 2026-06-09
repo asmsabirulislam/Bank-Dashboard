@@ -22,51 +22,27 @@ import streamlit as st
 st.set_page_config(page_title="Bank Submit Dashboard", page_icon="🏦",
                    layout="wide", initial_sidebar_state="expanded")
 
-st.markdown('''
-<style>
-.block-container{padding-top:1rem;max-width:100%;}
-[data-testid="stSidebar"]{
- background:linear-gradient(180deg,#08111c,#122133)!important;
-}
-[data-testid="metric-container"]{
- background:linear-gradient(135deg,#0c1520,#15273a);
- border:1px solid #1a8fff;
- padding:12px;
- border-radius:16px;
- box-shadow:0 8px 24px rgba(0,0,0,.25);
-}
-div[data-testid="stDataFrame"]{
- border:1px solid #1a8fff;border-radius:12px;
-}
-[data-testid="metric-container"]:hover {
-  transform: scale(1.02);
-  box-shadow:0 12px 32px rgba(0,200,167,.35);
-  transition: all 0.3s ease-in-out;
-}
-</style>
-''', unsafe_allow_html=True)
-
-
 st.markdown("""
 <style>
-[data-testid="stSidebar"]{background:linear-gradient(180deg,#08111c,#122133)!important;border-right:1px solid #1a2a3a;}
+html,body,[data-testid="stAppViewContainer"]{background:#070d14;color:#e2eaf3;}
+[data-testid="stSidebar"]{background:#0c1520!important;border-right:1px solid #1a2a3a;}
 section[data-testid="stSidebar"] *{color:#c8d8e8!important;}
 [data-testid="metric-container"]{background:#0c1520;border:1px solid #1a2a3a;
   border-top:2px solid #00c9a7;border-radius:10px;padding:14px 18px!important;}
 [data-testid="metric-container"] label{color:#8899aa!important;font-size:12px!important;}
 [data-testid="metric-container"] [data-testid="stMetricValue"]{
-  font-size:22px!important;font-weight:700!important;}
+  color:#00c9a7!important;font-size:22px!important;font-weight:700!important;}
 [data-testid="metric-container"] [data-testid="stMetricDelta"]{font-size:11px!important;}
 [data-testid="stTabs"] button{color:#556677!important;font-size:13px!important;
   border-bottom:2px solid transparent!important;}
 [data-testid="stTabs"] button[aria-selected="true"]{
-  border-bottom:2px solid #00c9a7!important;}
+  color:#00c9a7!important;border-bottom:2px solid #00c9a7!important;}
 hr{border-color:#1a2a3a!important;}
 .sh{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
     color:#556677;margin-bottom:4px;}
 div[data-testid="stDataFrame"]{border:1px solid #1a2a3a;border-radius:8px;}
 </style>
-""", unsafe_allow_html=True)
+''', unsafe_allow_html=True)
 
 PL = dict(
     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
