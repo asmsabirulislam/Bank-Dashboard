@@ -18,9 +18,13 @@ import streamlit as st
 from io import BytesIO
 
 try:
-    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib.pagesizes import A3, landscape
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.platypus import SimpleDocTemplate, LongTable, TableStyle, Paragraph, PageBreak
+    from reportlab.pdfbase import pdfmetrics
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
@@ -43,6 +47,14 @@ PL = dict(
 C = ["#00c9a7","#1a8fff","#ff6b35","#ffd700","#cc44ff",
      "#ff3366","#44aaff","#ff9944","#66dd66","#00aaff"]
 
+REQUIRED_COLUMNS = [
+    "Firm Name", "Sales Person", "Bank Submition Date", "Invoice Value",
+    "Lc Value", "Maturity Date", "Payment. Rcv Dt", "Bank Accept Date",
+    "LC No", "Our Bank", "Party Name", "Bank Name"
+]
+
+PL_GENERAL = {k: v for k, v in PL.items() if k not in ("legend", "xaxis", "yaxis")}
+
 def usd(v):
     try:
         v = float(v)
@@ -61,12 +73,26 @@ def sh(label):
 # ─────────────────────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner="⏳ Loading data…")
 def load(path):
-    try:    df = pd.read_excel(path, sheet_name="Raw Data")
-    except: df = pd.read_excel(path)
+    try:
+        df = pd.read_excel(path, sheet_name="Raw Data")
+    except Exception:
+        df = pd.read_excel(path)
+    df.columns = df.columns.str.strip()
+    # Drop stray unnamed index columns and empty columns from Excel imports
+    df = df.loc[:, ~df.columns.str.match(r"^Unnamed")]  # remove Unnamed: 0 / index cols
+    df = df.dropna(axis=1, how="all")
+    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+    if missing:
+        raise ValueError(
+            "Excel file is missing required columns: " + ", ".join(missing)
+        )
     df = df.dropna(subset=["Firm Name"])
     df["Sales Person"] = (df["Sales Person"].astype(str).str.strip()
-                          .str.replace("_x000D_\n","",regex=False).str.strip())
-    df.loc[df["Sales Person"]=="nan","Sales Person"] = None
+                          .str.replace("_x000D_\n", "", regex=False).str.strip())
+    df["Sales Person"] = df["Sales Person"].replace(
+        r"^(nan|NaN|none|None|\s*)$", None, regex=True
+    )
+    df.loc[df["Sales Person"].isin([None, ""]), "Sales Person"] = None
     df["_date"]     = pd.to_datetime(df["Bank Submition Date"], errors="coerce")
     df["MonthSort"] = df["_date"].dt.to_period("M")
     df["Month"]     = df["_date"].dt.strftime("%b %Y")
@@ -82,7 +108,7 @@ def load(path):
 st.sidebar.markdown("## 🏦 Bank Submit\nDashboard")
 st.sidebar.markdown("---")
 
-xlsx = [f for f in glob.glob("*.xlsx") + glob.glob("**/*.xlsx", recursive=False)
+xlsx = [f for f in glob.glob("*.xlsx") + glob.glob("**/*.xlsx", recursive=True)
         if "Dashboard" not in f]
 up = st.sidebar.file_uploader("📂 Upload Excel file", type=["xlsx"])
 if up:
@@ -97,20 +123,39 @@ raw = load(FP)
 
 st.sidebar.markdown("### 🔽 Filters")
 ml  = [str(m) for m in sorted(raw["MonthSort"].dropna().unique())]
-sm  = st.sidebar.multiselect("Month",        ml,                                         default=ml)
-sf  = st.sidebar.multiselect("Firm",         sorted(raw["Firm Name"].dropna().unique()), default=sorted(raw["Firm Name"].dropna().unique()))
-sb  = st.sidebar.multiselect("Our Bank",     sorted(raw["Our Bank"].dropna().unique()),  default=sorted(raw["Our Bank"].dropna().unique()))
-ss  = st.sidebar.multiselect("Sales Person", sorted(raw["Sales Person"].dropna().unique()), default=sorted(raw["Sales Person"].dropna().unique()))
+sm  = st.sidebar.multiselect("Month", ml, default=ml)
+sf  = st.sidebar.multiselect("Firm", sorted(raw["Firm Name"].dropna().unique()), default=sorted(raw["Firm Name"].dropna().unique()))
+sb  = st.sidebar.multiselect("Our Bank", sorted(raw["Our Bank"].dropna().unique()), default=sorted(raw["Our Bank"].dropna().unique()))
+
+sales_persons = sorted(raw["Sales Person"].dropna().unique())
+ss_choices = ["(Blank)"] + sales_persons if raw["Sales Person"].isna().any() else sales_persons
+ss = st.sidebar.multiselect("Sales Person", ss_choices, default=ss_choices)
+
 sparty = st.sidebar.multiselect("Party Name", sorted(raw["Party Name"].dropna().unique()), default=sorted(raw["Party Name"].dropna().unique()))
-date_range = st.sidebar.date_input("Date Range", value=(raw["_date"].min().date(), raw["_date"].max().date()))
+
+min_date = raw["_date"].min()
+max_date = raw["_date"].max()
+if pd.isna(min_date) or pd.isna(max_date):
+    date_range = st.sidebar.date_input("Date Range", value=(pd.Timestamp.today().date(), pd.Timestamp.today().date()))
+else:
+    date_range = st.sidebar.date_input("Date Range", value=(min_date.date(), max_date.date()))
 
 df = raw.copy()
-if sm: df = df[df["MonthSort"].astype(str).isin(sm)]
-if sf: df = df[df["Firm Name"].isin(sf)]
-if sb: df = df[df["Our Bank"].isin(sb)]
-if ss: df = df[df["Sales Person"].isin(ss) | df["Sales Person"].isna()]
-if sparty: df = df[df["Party Name"].isin(sparty)]
-if isinstance(date_range, tuple) and len(date_range)==2:
+if sm:
+    df = df[df["MonthSort"].astype(str).isin(sm)]
+if sf:
+    df = df[df["Firm Name"].isin(sf)]
+if sb:
+    df = df[df["Our Bank"].isin(sb)]
+if ss:
+    if "(Blank)" in ss:
+        selected = [s for s in ss if s != "(Blank)"]
+        df = df[(df["Sales Person"].isin(selected)) | df["Sales Person"].isna()]
+    else:
+        df = df[df["Sales Person"].isin(ss)]
+if sparty:
+    df = df[df["Party Name"].isin(sparty)]
+if isinstance(date_range, tuple) and len(date_range) == 2:
     start_date, end_date = date_range
     df = df[(df["_date"].dt.date >= start_date) & (df["_date"].dt.date <= end_date)]
 
@@ -557,41 +602,274 @@ with t6:
     if search_text:
         mask = pft.astype(str).apply(lambda c: c.str.contains(search_text, case=False, na=False)).any(axis=1)
         pft = pft[mask]
-    st.dataframe(pft, use_container_width=True, hide_index=True, height=500)
+
+    date_columns = [
+        "Bank Submition Date", "Bank Ref Date", "Lc Date",
+        "Maturity Date", "Payment. Rcv Dt", "Date"
+    ]
+    for col in date_columns:
+        if col in pft.columns:
+            pft[col] = pd.to_datetime(pft[col], errors="coerce").dt.strftime("%d %b %Y")
+
+    internal_columns = ["_date", "MonthSort", "Month", "WeekSort", "Week", "DayName"]
+    report_column_order = [
+        "Firm Name",
+        "Our Bank",
+        "Bank Submition Date",
+        "Bank Ref Date",
+        "Bank Refno",
+        "Party Name",
+        "LC No",
+        "Lc Date",
+        "Tenor",
+        "Bank Name",
+        "Invoice No",
+        "Invoice Date",
+        "Invoice Qty",
+        "Invoice Value",
+        "Bank Accept Date",
+        "Maturity Date",
+        "Payment. Rcv Dt",
+        "Sales Person",
+        "Week",
+        "DayName",
+        "Date",
+        "Status",
+    ]
+    export_cols = [c for c in report_column_order if c in pft.columns]
+    extra_cols = [c for c in pft.columns if c not in export_cols and c not in internal_columns]
+    pft_export = pft[export_cols + extra_cols]
+    pft_display = pft_export.copy()
+
+    def make_column_widths(dataframe, min_width=100, max_width=450, char_width=8):
+        text_df = dataframe.fillna("").astype(str)
+        widths = {}
+        max_lengths = text_df.apply(lambda col: col.str.len().max(), axis=0)
+        for col, max_len in max_lengths.items():
+            header_len = len(str(col))
+            width = max(header_len, int(max_len or 0)) * char_width + 24
+            widths[col] = min(max_width, max(min_width, width))
+        return widths
+
+    column_widths = make_column_widths(pft_display)
+    column_config = {
+        col: st.column_config.TextColumn(width=column_widths[col])
+        for col in pft_display.columns
+    }
+    st.dataframe(pft_display, use_container_width=True, hide_index=True,
+                 height=500, column_config=column_config)
+
+    def table_widths_to_pdf_inches(widths, min_width=1.2, max_width=4.5):
+        return [max(min_width, min(max_width, w / 96.0)) for w in widths]
+
+    table_pdf_widths = table_widths_to_pdf_inches([column_widths[col] for col in pft_display.columns])
 
     col_csv, col_pdf = st.columns([1, 1])
     col_csv.download_button("📥 Download CSV",
-        pft.to_csv(index=False).encode("utf-8"),
+        pft_export.to_csv(index=False).encode("utf-8"),
         "bank_submit_filtered.csv", "text/csv")
 
+    # PDF width controls: let user choose auto, equal or custom per-column widths
+    pdf_width_mode = st.selectbox("PDF column width mode", [
+        "Auto (by content)", "Equal", "Custom (inches, comma-separated)"
+    ])
+    custom_widths_input = ""
+    if pdf_width_mode == "Custom (inches, comma-separated)":
+        custom_widths_input = st.text_input("Custom widths (comma-separated, e.g. 1.0,2.5,1.5)")
+
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        pdf_period = f"{date_range[0].strftime('%d %b %Y')} – {date_range[1].strftime('%d %b %Y')}"
+    else:
+        pdf_period = str(date_range)
+
     if REPORTLAB_AVAILABLE:
-        def df_to_pdf_bytes(df, title="Bank Submit Records"):
+        def df_to_pdf_bytes(df, title="Bank submit status", subtitle="", custom_widths=None):
             buf = BytesIO()
-            # Use landscape letter to give more width for tables
-            doc = SimpleDocTemplate(buf, pagesize=landscape(letter), leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18)
-            # Prepare table data: header + rows (all converted to strings)
-            data = [list(df.columns)] + df.fillna("").astype(str).values.tolist()
-            table = Table(data, repeatRows=1)
-            # Basic styling
+            left_margin = right_margin = top_margin = bottom_margin = 24
+            page_width, page_height = landscape(A3)
+            usable_width = page_width - left_margin - right_margin
+            df_text = df.fillna("").astype(str)
+            header_font = "Helvetica-Bold"
+            cell_font = "Helvetica"
+            header_font_size = 10
+            cell_font_size = 8
+            min_col_width = 1.2 * inch
+            max_col_width = 4.5 * inch
+
+            def measure_text_width(text: str, font: str, size: float) -> float:
+                return pdfmetrics.stringWidth(str(text), font, size)
+
+            # If caller supplied custom_widths (list of inches) or asked for equal widths,
+            # build col_widths from that; otherwise fall back to auto-measurement.
+            col_widths = []
+            if custom_widths and isinstance(custom_widths, (list, tuple)):
+                # convert inches to points
+                col_widths = [max(min_col_width, min(max_col_width, float(w) * inch)) for w in custom_widths]
+                # if fewer widths than columns, distribute remaining space equally
+                if len(col_widths) < len(df_text.columns):
+                    remaining = len(df_text.columns) - len(col_widths)
+                    remaining_space = max(0, usable_width - sum(col_widths))
+                    add_w = remaining_space / remaining if remaining else min_col_width
+                    col_widths.extend([max(min_col_width, min(max_col_width, add_w)) for _ in range(remaining)])
+                total_width = sum(col_widths)
+                if total_width > usable_width and total_width > 0:
+                    scale = usable_width / total_width
+                    col_widths = [w * scale for w in col_widths]
+            elif custom_widths == "EQUAL":
+                eq = usable_width / len(df_text.columns) if len(df_text.columns) else usable_width
+                col_widths = [eq for _ in df_text.columns]
+            else:
+                sample_count = 250
+                for col in df_text.columns:
+                    header_width = measure_text_width(col, header_font, header_font_size)
+                    values = df_text[col].tolist()
+                    if len(values) > sample_count:
+                        step = max(1, len(values) // sample_count)
+                        values = values[::step]
+                    measured = [measure_text_width(v, cell_font, cell_font_size) for v in values if v is not None]
+                    if measured:
+                        sorted_widths = sorted(measured)
+                        percentile_index = min(len(sorted_widths) - 1, int(len(sorted_widths) * 0.9))
+                        cell_width = sorted_widths[percentile_index]
+                    else:
+                        cell_width = measure_text_width("M", cell_font, cell_font_size)
+                    width = max(header_width, cell_width) + 16
+                    col_widths.append(min(max_col_width, max(min_col_width, width)))
+
+                total_width = sum(col_widths)
+                if total_width > usable_width and total_width > 0:
+                    scale = usable_width / total_width
+                    col_widths = [w * scale for w in col_widths]
+                elif total_width < usable_width and total_width > 0:
+                    extra = usable_width - total_width
+                    col_widths = [w + extra * (w / total_width) for w in col_widths]
+
+            styles = getSampleStyleSheet()
+            header_style = ParagraphStyle(
+                name="HeaderStyle",
+                parent=styles["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=10,
+                leading=11,
+                textColor=colors.white,
+                alignment=TA_LEFT,
+                spaceAfter=2,
+                spaceBefore=2,
+                wordWrap="CJK",
+            )
+            cell_style = ParagraphStyle(
+                name="CellStyle",
+                parent=styles["Normal"],
+                fontName="Helvetica",
+                fontSize=8,
+                leading=10,
+                alignment=TA_LEFT,
+                wordWrap="CJK",
+                allowWidows=True,
+                allowOrphans=True,
+                spaceBefore=0,
+                spaceAfter=0,
+                leftIndent=0,
+                rightIndent=0,
+            )
+
+            def chunk_columns(columns, widths, max_width):
+                groups = []
+                current_cols = []
+                current_width = 0.0
+                for col, w in zip(columns, widths):
+                    if current_cols and current_width + w > max_width:
+                        groups.append(current_cols)
+                        current_cols = [col]
+                        current_width = w
+                    else:
+                        current_cols.append(col)
+                        current_width += w
+                if current_cols:
+                    groups.append(current_cols)
+                return groups
+
+            data_pages = []
+            column_groups = chunk_columns(list(df.columns), col_widths, usable_width)
             style = TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a8fff")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("WORDWRAP", (0, 0), (-1, -1), "CJK"),
                 ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
                 ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.black),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
             ])
-            table.setStyle(style)
-            elems = [table]
-            doc.build(elems)
+
+            for group_index, group_cols in enumerate(column_groups):
+                group_widths = [col_widths[list(df.columns).index(col)] for col in group_cols]
+                page_data = [[Paragraph(str(col), header_style) for col in group_cols]]
+                for row in df.fillna("").astype(str).values.tolist():
+                    page_data.append([Paragraph(str(row[list(df.columns).index(col)]), cell_style) for col in group_cols])
+
+                page_table = LongTable(
+                    page_data,
+                    repeatRows=1,
+                    colWidths=group_widths,
+                    hAlign="LEFT",
+                    splitByRow=1,
+                    spaceBefore=12,
+                    spaceAfter=12,
+                )
+                page_table.setStyle(style)
+                data_pages.append(page_table)
+                if group_index < len(column_groups) - 1:
+                    data_pages.append(PageBreak())
+
+            def page_header(canvas, doc):
+                canvas.saveState()
+                title_y = page_height - top_margin + 10
+                subtitle_y = title_y - 14
+                canvas.setFont("Helvetica-Bold", 20)
+                canvas.drawCentredString(page_width / 2, title_y, str(title))
+                canvas.setFont("Helvetica", 11)
+                canvas.drawCentredString(page_width / 2, subtitle_y, str(subtitle))
+                canvas.setFont("Helvetica", 8)
+                canvas.drawRightString(page_width - right_margin, title_y, f"Page {doc.page}")
+                canvas.restoreState()
+
+            doc = SimpleDocTemplate(
+                buf,
+                pagesize=landscape(A3),
+                leftMargin=left_margin,
+                rightMargin=right_margin,
+                topMargin=top_margin + 28,
+                bottomMargin=bottom_margin,
+            )
+            doc.build(data_pages, onFirstPage=page_header, onLaterPages=page_header)
             buf.seek(0)
             return buf.read()
 
         try:
-            pdf_bytes = df_to_pdf_bytes(pft)
+            # determine parsed_custom based on UI selection
+            parsed_custom = None
+            if pdf_width_mode == "Auto (by content)":
+                parsed_custom = table_pdf_widths
+            elif pdf_width_mode == "Equal":
+                parsed_custom = "EQUAL"
+            elif pdf_width_mode == "Custom (inches, comma-separated)" and custom_widths_input:
+                try:
+                    parsed_custom = [float(x.strip()) for x in custom_widths_input.split(",") if x.strip()]
+                except Exception:
+                    col_pdf.error("Invalid custom widths. Use comma-separated numbers like: 1.0,2.5,1.5")
+                    parsed_custom = None
+
+            pdf_bytes = df_to_pdf_bytes(pft_export, subtitle=pdf_period, custom_widths=parsed_custom)
             col_pdf.download_button("📄 Download PDF",
                 pdf_bytes,
-                "bank_submit_filtered.pdf",
+                "bank_submit_status.pdf",
                 "application/pdf")
         except Exception as e:
             col_pdf.error(f"Could not generate PDF: {e}")
