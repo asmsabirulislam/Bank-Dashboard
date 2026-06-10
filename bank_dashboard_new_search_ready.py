@@ -11,6 +11,7 @@ Run:
 """
 
 import os, glob, shutil, tempfile
+from datetime import datetime
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -649,8 +650,26 @@ with t6:
             header_len = len(str(col))
             width = max(header_len, int(max_len or 0)) * char_width + 24
             widths[col] = min(max_width, max(min_width, width))
+    
+        # Ensure Bank Refno gets extra width to prevent forced wrapping in the display table
+        if "Bank Refno" in widths:
+            widths["Bank Refno"] = max(widths["Bank Refno"], 285)
+        # Ensure Invoice Value column is wider so currency doesn't wrap as often
+        if "Invoice Value" in widths:
+            widths["Invoice Value"] = max(widths["Invoice Value"], 160)
         return widths
 
+    # Compute total invoice value for the current (filtered & searched) dataset
+    total_invoice_value = 0.0
+    if "Invoice Value" in pft_export.columns:
+        try:
+            total_invoice_value = float(pft_export["Invoice Value"].sum())
+        except Exception:
+            total_invoice_value = 0.0
+
+    # Format Invoice Value for display (USD)
+    if "Invoice Value" in pft_display.columns:
+        pft_display["Invoice Value"] = pft_display["Invoice Value"].map(lambda x: f"${x:,.2f}")
     column_widths = make_column_widths(pft_display)
     column_config = {
         col: st.column_config.TextColumn(width=column_widths[col])
@@ -658,11 +677,16 @@ with t6:
     }
     st.dataframe(pft_display, use_container_width=True, hide_index=True,
                  height=500, column_config=column_config)
+    # Show filtered total for Invoice Value
+    if "Invoice Value" in pft_export.columns:
+        st.markdown(f"**Total Invoice Value (filtered):** ${total_invoice_value:,.2f}")
 
     def table_widths_to_pdf_inches(widths, min_width=1.2, max_width=4.5):
         return [max(min_width, min(max_width, w / 96.0)) for w in widths]
 
     table_pdf_widths = table_widths_to_pdf_inches([column_widths[col] for col in pft_display.columns])
+
+    
 
     col_csv, col_pdf = st.columns([1, 1])
     col_csv.download_button("📥 Download CSV",
@@ -683,7 +707,7 @@ with t6:
         pdf_period = str(date_range)
 
     if REPORTLAB_AVAILABLE:
-        def df_to_pdf_bytes(df, title="Bank submit status", subtitle="", custom_widths=None):
+        def df_to_pdf_bytes(df, title="Bank submit status", subtitle="", custom_widths=None, generated_at=""):
             buf = BytesIO()
             left_margin = right_margin = top_margin = bottom_margin = 24
             page_width, page_height = landscape(A3)
@@ -831,13 +855,20 @@ with t6:
             def page_header(canvas, doc):
                 canvas.saveState()
                 title_y = page_height - top_margin + 10
-                subtitle_y = title_y - 14
+                subtitle_y = title_y - 16
+                generated_y = subtitle_y - 14
                 canvas.setFont("Helvetica-Bold", 20)
                 canvas.drawCentredString(page_width / 2, title_y, str(title))
                 canvas.setFont("Helvetica", 11)
                 canvas.drawCentredString(page_width / 2, subtitle_y, str(subtitle))
+                if generated_at:
+                    canvas.setFont("Helvetica", 8)
+                    canvas.drawString(left_margin, generated_y, f"Generated on: {generated_at}")
                 canvas.setFont("Helvetica", 8)
                 canvas.drawRightString(page_width - right_margin, title_y, f"Page {doc.page}")
+                # Footer branding text
+                canvas.setFont("Helvetica-Bold", 8)
+                canvas.drawRightString(page_width - right_margin, bottom_margin / 2, "ASM")
                 canvas.restoreState()
 
             doc = SimpleDocTemplate(
@@ -866,7 +897,29 @@ with t6:
                     col_pdf.error("Invalid custom widths. Use comma-separated numbers like: 1.0,2.5,1.5")
                     parsed_custom = None
 
-            pdf_bytes = df_to_pdf_bytes(pft_export, subtitle=pdf_period, custom_widths=parsed_custom)
+            generated_at = datetime.now().strftime("%d %b %Y %H:%M:%S")
+            # Prepare PDF dataframe: format Invoice Value as USD and append a totals row
+            pdf_df = pft_export.copy()
+            if "Invoice Value" in pdf_df.columns:
+                pdf_df["Invoice Value"] = pdf_df["Invoice Value"].map(lambda x: f"${x:,.2f}")
+            # Append a totals row (label in first column, total in Invoice Value column)
+            try:
+                total_val = float(total_invoice_value)
+            except Exception:
+                total_val = 0.0
+            if len(pdf_df.columns) > 0:
+                totals_row = {c: "" for c in pdf_df.columns}
+                totals_row[pdf_df.columns[0]] = "TOTAL"
+                if "Invoice Value" in pdf_df.columns:
+                    totals_row["Invoice Value"] = f"${total_val:,.2f}"
+                pdf_df = pd.concat([pdf_df, pd.DataFrame([totals_row])], ignore_index=True)
+
+            pdf_bytes = df_to_pdf_bytes(
+                pdf_df,
+                subtitle=pdf_period,
+                custom_widths=parsed_custom,
+                generated_at=generated_at,
+            )
             col_pdf.download_button("📄 Download PDF",
                 pdf_bytes,
                 "bank_submit_status.pdf",
