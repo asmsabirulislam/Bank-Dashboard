@@ -740,13 +740,69 @@ with t_weekly:
     st.markdown("---")
 
     sh("📋 Weekly Summary Table")
-    wt = weekly[["Week","Count","Inv","LC","Paid_n","Paid_pct"]].copy()
-    wt["Inv"]      = wt["Inv"].map(lambda x: f"${x:,.2f}")
-    wt["LC"]       = wt["LC"].map(lambda x: f"${x:,.2f}")
-    wt["Paid_pct"] = wt["Paid_pct"].map(lambda x: f"{x:.1f}%")
-    wt["Paid_n"]   = wt["Paid_n"].astype(int)
-    wt.columns     = ["Week","Submissions","Invoice Value (USD)","LC Value (USD)","Paid","Payment Rate"]
-    st.dataframe(wt, use_container_width=True, hide_index=True)
+
+    # Weekly Summary Table: use same Status logic as “Full Record Table with Search” tab
+    # Paid         -> Payment. Rcv Dt notna
+    # Accepted     -> Bank Accept Date notna AND Payment. Rcv Dt isna
+    # Not Accepted -> Bank Accept Date isna
+
+    wk_status = df[["Week","Payment. Rcv Dt","Bank Accept Date","Invoice Value"]].copy()
+    wk_status["Status"] = wk_status.apply(
+        lambda r:
+            "Paid" if pd.notna(r["Payment. Rcv Dt"]) else
+            ("Accepted" if pd.notna(r["Bank Accept Date"]) else "Not Accepted"),
+        axis=1
+    )
+
+    # counts
+    total = wk_status.groupby("Week").size().reset_index(name="Submissions")
+    paid_cnt = wk_status[wk_status["Status"] == "Paid"].groupby("Week").size().reset_index(name="Paid")
+
+    # values by status
+    val = wk_status.groupby(["Week","Status"])["Invoice Value"].sum().reset_index()
+    val = val.pivot(index="Week", columns="Status", values="Invoice Value").reset_index()
+
+    val = val.rename(columns={
+        "Paid":"Paid Value",
+        "Accepted":"Accepted Value",
+        "Not Accepted":"Not Accepted Value",
+    })
+
+    summary = total.merge(paid_cnt, on="Week", how="left").merge(val, on="Week", how="left").fillna(0)
+    summary["Payment Rate"] = (summary["Paid"] / summary["Submissions"] * 100).round(1)
+
+    # Total invoice sum for the week (all statuses)
+    total_val = wk_status.groupby("Week")["Invoice Value"].sum().reset_index(name="Invoice Value (USD)")
+
+    summary = summary.merge(total_val, on="Week", how="left")
+    summary = summary[[
+        "Week",
+        "Submissions",
+        "Invoice Value (USD)",
+        "Paid",
+        "Payment Rate",
+        "Paid Value",
+        "Accepted Value",
+        "Not Accepted Value",
+    ]]
+
+    # formatting (do this AFTER the total_val merge so symbols won't get lost)
+    summary["Invoice Value (USD)"] = summary["Invoice Value (USD)"].map(lambda x: f"${x:,.2f}")
+    summary["Paid Value"] = summary["Paid Value"].map(lambda x: f"${x:,.2f}")
+    summary["Accepted Value"] = summary["Accepted Value"].map(lambda x: f"${x:,.2f}")
+    summary["Not Accepted Value"] = summary["Not Accepted Value"].map(lambda x: f"${x:,.2f}")
+    summary["Payment Rate"] = summary["Payment Rate"].map(lambda x: f"{x:.1f}%")
+    summary["Paid"] = summary["Paid"].astype(int)
+
+
+
+    st.dataframe(summary, use_container_width=True, hide_index=True)
+
+
+
+
+
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — FIRM & SALES PERSON
