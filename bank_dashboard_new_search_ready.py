@@ -876,49 +876,38 @@ with t_weekly:
     ]]
 
     # formatting (do this AFTER the total_val merge so symbols won't get lost)
-    summary["Invoice Value (USD)"] = summary["Invoice Value (USD)"].map(lambda x: f"${x:,.2f}")
-    summary["Paid Value"] = summary["Paid Value"].map(lambda x: f"${x:,.2f}")
-    summary["Accepted Value"] = summary["Accepted Value"].map(lambda x: f"${x:,.2f}")
-    summary["Not Accepted Value"] = summary["Not Accepted Value"].map(lambda x: f"${x:,.2f}")
-    summary["Payment Rate"] = summary["Payment Rate"].map(lambda x: f"{x:.1f}%")
-    summary["Paid"] = summary["Paid"].astype(int)
-
-
-
-    # ── Total sum row (requested) ─────────────────────────────────
-    # Use numeric columns (before formatting) to avoid string-parsing issues.
+    # ── Total sum row (requested) — compute totals BEFORE formatting ─────────────────
+    # At this point, summary columns are still numeric.
     subs_total = int(summary["Submissions"].sum())
+    paid_total = int(summary["Paid"].sum())
 
-    # Paid / Accepted / Not Accepted values are already formatted currency strings in `summary`,
-    # but we can still safely parse them here because they are limited to $... format.
-    def _money_to_float(s):
-        try:
-            if isinstance(s, str):
-                return float(s.replace("$", "").replace(",", ""))
-            return float(s)
-        except Exception:
-            return 0.0
-
-    inv_total       = _money_to_float(summary["Invoice Value (USD)"].sum())
-    paid_total      = int(summary["Paid"].sum())
-    paid_val_total  = _money_to_float(summary["Paid Value"].sum())
-    acc_val_total   = _money_to_float(summary["Accepted Value"].sum())
-    nacc_val_total  = _money_to_float(summary["Not Accepted Value"].sum())
+    inv_total = float(summary["Invoice Value (USD)"].sum())
+    paid_val_total = float(summary["Paid Value"].sum())
+    acc_val_total = float(summary["Accepted Value"].sum())
+    nacc_val_total = float(summary["Not Accepted Value"].sum())
 
     pay_rate_total = f"{(paid_total / subs_total * 100 if subs_total else 0):.1f}%"
 
     totals_row = {
-        "Week": "TOTAL",  # date/label column requested
+        "Week": "TOTAL",
         "Submissions": subs_total,
-        "Invoice Value (USD)": f"${inv_total:,.2f}",
+        "Invoice Value (USD)": inv_total,
         "Paid": paid_total,
-        "Payment Rate": pay_rate_total,
-        "Paid Value": f"${paid_val_total:,.2f}",
-        "Accepted Value": f"${acc_val_total:,.2f}",
-        "Not Accepted Value": f"${nacc_val_total:,.2f}",
+        "Payment Rate": float(pay_rate_total.replace("%", "")),
+        "Paid Value": paid_val_total,
+        "Accepted Value": acc_val_total,
+        "Not Accepted Value": nacc_val_total,
     }
 
     summary_total = pd.concat([summary, pd.DataFrame([totals_row])], ignore_index=True)
+
+    # ── Formatting for display (after TOTAL row appended) ─────────────────────────────
+    summary_total["Invoice Value (USD)"] = summary_total["Invoice Value (USD)"].map(lambda x: f"${x:,.2f}")
+    summary_total["Paid Value"] = summary_total["Paid Value"].map(lambda x: f"${x:,.2f}")
+    summary_total["Accepted Value"] = summary_total["Accepted Value"].map(lambda x: f"${x:,.2f}")
+    summary_total["Not Accepted Value"] = summary_total["Not Accepted Value"].map(lambda x: f"${x:,.2f}")
+    summary_total["Payment Rate"] = summary_total["Payment Rate"].map(lambda x: f"{float(x):.1f}%")
+    summary_total["Paid"] = summary_total["Paid"].astype(int)
 
     st.dataframe(summary_total, use_container_width=True, hide_index=True)
 
@@ -1153,11 +1142,44 @@ with t_firm:
         st.plotly_chart(fig2, use_container_width=True)
 
         sh("Sales Person Ranking Table")
-        st2 = spg[["Sales Person","Inv","N","Paid","Pct"]].copy()
-        st2["Inv"]  = st2["Inv"].map(lambda x: f"${x:,.2f}")
-        st2["Pct"]  = st2["Pct"].map(lambda x: f"{x:.1f}%")
-        st2["Paid"] = st2["Paid"].astype(int)
-        st2.columns = ["Sales Person","Invoice Value (USD)","Submissions","Paid","Payment Rate"]
+        # Include Paid/Accepted/Not Accepted values as requested
+        # Paid         -> Payment. Rcv Dt notna
+        # Accepted     -> Bank Accept Date notna AND Payment. Rcv Dt isna
+        # Not Accepted -> Bank Accept Date isna
+
+        sp_rank = spg[["Sales Person","Inv","N","Paid","Pct"]].copy()
+
+        sp_accepted = (df[df["Payment. Rcv Dt"].isna() & df["Bank Accept Date"].notna()]
+                         .groupby("Sales Person")["Invoice Value"].sum())
+        sp_not_accepted = (df[df["Bank Accept Date"].isna()]
+                            .groupby("Sales Person")["Invoice Value"].sum())
+
+        sp_rank["Accepted Value"] = sp_rank["Sales Person"].map(sp_accepted).fillna(0.0)
+        sp_rank["Not Accepted Value"] = sp_rank["Sales Person"].map(sp_not_accepted).fillna(0.0)
+
+        sp_paid = (df[df["Payment. Rcv Dt"].notna()]
+                    .groupby("Sales Person")["Invoice Value"].sum())
+        sp_rank["Paid Value"] = sp_rank["Sales Person"].map(sp_paid).fillna(0.0)
+
+        # Format
+        sp_rank["Inv"] = sp_rank["Inv"].map(lambda x: f"${x:,.2f}")
+        sp_rank["Paid Value"] = sp_rank["Paid Value"].map(lambda x: f"${x:,.2f}")
+        sp_rank["Accepted Value"] = sp_rank["Accepted Value"].map(lambda x: f"${x:,.2f}")
+        sp_rank["Not Accepted Value"] = sp_rank["Not Accepted Value"].map(lambda x: f"${x:,.2f}")
+        sp_rank["Pct"] = sp_rank["Pct"].map(lambda x: f"{x:.1f}%")
+        sp_rank["Paid"] = sp_rank["Paid"].astype(int)
+
+        st2 = sp_rank[["Sales Person","Inv","N","Paid","Pct","Paid Value","Accepted Value","Not Accepted Value"]].copy()
+        st2.columns = [
+            "Sales Person",
+            "Invoice Value (USD)",
+            "Submissions",
+            "Paid",
+            "Payment Rate",
+            "Paid Value",
+            "Accepted Value",
+            "Not Accepted Value",
+        ]
         st.dataframe(st2, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
