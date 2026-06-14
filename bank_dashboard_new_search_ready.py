@@ -639,10 +639,99 @@ with t_overview:
         st.plotly_chart(fig3, use_container_width=True)
     with b_col:
         sh("📋 Monthly Summary Table")
-        tbl = monthly[["Month","Count","Inv","LC"]].copy()
-        tbl.columns = ["Month","Submissions","Invoice Value (USD)","LC Value (USD)"]
+        tbl = monthly[["MonthSort","Month","Count","Inv","LC"]].copy()
+        # `monthly` already has MonthSort in the groupby, but we rebuild `tbl` from
+        # a subset. For merging breakdown values we need MonthSort back.
+        # Add columns for Payment & Acceptance breakdown (based on current filters)
+        # Paid            -> Payment. Rcv Dt notna
+        # Accepted (Pending Pmt) -> Bank Accept Date notna AND Payment. Rcv Dt isna
+        # Not Accepted    -> Bank Accept Date isna
+
+        # Values (Invoice)
+        paid_value = df[df["Payment. Rcv Dt"].notna()].groupby("MonthSort")["Invoice Value"].sum()
+        pending_value = df[df["Payment. Rcv Dt"].isna()].groupby("MonthSort")["Invoice Value"].sum()
+        accepted_value = df[(df["Payment. Rcv Dt"].isna()) & (df["Bank Accept Date"].notna())].groupby("MonthSort")["Invoice Value"].sum()
+        not_accepted_value = df[df["Bank Accept Date"].isna()].groupby("MonthSort")["Invoice Value"].sum()
+
+        # Counts (LC No count)
+        paid_cnt = df[df["Payment. Rcv Dt"].notna()].groupby("MonthSort").size()
+        accepted_cnt = df[(df["Payment. Rcv Dt"].isna()) & (df["Bank Accept Date"].notna())].groupby("MonthSort").size()
+        not_accepted_cnt = df[df["Bank Accept Date"].isna()].groupby("MonthSort").size()
+
+        tbl = tbl.merge(
+            paid_value.rename("Paid Value").reset_index(),
+            on="MonthSort",
+            how="left",
+        ).merge(
+            pending_value.rename("Pending Value").reset_index(),
+            on="MonthSort",
+            how="left",
+        ).merge(
+            accepted_value.rename("Accepted Value").reset_index(),
+            on="MonthSort",
+            how="left",
+        ).merge(
+            not_accepted_value.rename("Not Accepted Value").reset_index(),
+            on="MonthSort",
+            how="left",
+        ).merge(
+            paid_cnt.rename("Paid Count").reset_index(),
+            on="MonthSort",
+            how="left",
+        ).merge(
+            accepted_cnt.rename("Accepted Count").reset_index(),
+            on="MonthSort",
+            how="left",
+        ).merge(
+            not_accepted_cnt.rename("Not Accepted Count").reset_index(),
+            on="MonthSort",
+            how="left",
+        )
+
+        # Fill NaNs
+        for c in ["Paid Value","Pending Value","Accepted Value","Not Accepted Value","Paid Count","Accepted Count","Not Accepted Count"]:
+            tbl[c] = tbl[c].fillna(0)
+
+        # Paid Count % (requested)
+        tbl["Paid Count %"] = (tbl["Paid Count"] / tbl["Count"] * 100).replace([pd.NA, pd.NaT, float("inf")], 0).round(1)
+
+        # Rename base columns + select final display columns
+        tbl = tbl[[
+            "Month",
+            "Count",
+            "Inv",
+            "LC",
+            "Paid Count",
+            "Paid Count %",
+            "Paid Value",
+            "Accepted Count",
+            "Accepted Value",
+            "Not Accepted Value",
+        ]].copy()
+
+        tbl.columns = [
+            "Month",
+            "Submissions",
+            "Invoice Value (USD)",
+            "LC Value (USD)",
+            "Paid Count",
+            "Paid Count %",
+            "Paid Value (USD)",
+            "Accepted Count",
+            "Accepted Value (USD)",
+            "Not Accepted Value (USD)",
+        ]
+
+        # Formatting
         tbl["Invoice Value (USD)"] = tbl["Invoice Value (USD)"].map(lambda x: f"${x:,.2f}")
         tbl["LC Value (USD)"]      = tbl["LC Value (USD)"].map(lambda x: f"${x:,.2f}")
+        tbl["Paid Value (USD)"]    = tbl["Paid Value (USD)"].map(lambda x: f"${x:,.2f}")
+        tbl["Accepted Value (USD)"] = tbl["Accepted Value (USD)"].map(lambda x: f"${x:,.2f}")
+        tbl["Not Accepted Value (USD)"] = tbl["Not Accepted Value (USD)"].map(lambda x: f"${x:,.2f}")
+        tbl["Paid Count"] = tbl["Paid Count"].astype(int)
+        tbl["Accepted Count"] = tbl["Accepted Count"].astype(int)
+        tbl["Paid Count %"] = tbl["Paid Count %"].map(lambda x: f"{x:.1f}%")
+
         st.dataframe(tbl, use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
