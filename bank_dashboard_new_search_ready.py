@@ -917,7 +917,7 @@ with t_weekly:
         def weekly_summary_to_pdf_bytes(df_in, title="Bank Submissions Weekly Summary Table 2026",
                                           subtitle="", generated_at=""):
             buf = BytesIO()
-            from reportlab.lib.pagesizes import landscape as _landscape
+            from reportlab.lib.pagesizes import A3, landscape as _landscape
             from reportlab.lib.units import inch as _inch
 
             pw, ph = _landscape(A3)
@@ -1296,18 +1296,67 @@ with t_payment:
         "✅ Paid"        if pd.notna(r["Payment. Rcv Dt"]) else
         "⏳ Accepted"   if pd.notna(r["Bank Accept Date"]) else
         "❌ Not Accepted", axis=1)
+    date_cols = [
+        "Bank Submition Date",
+        "Bank Ref Date",
+        "Lc Date",
+        "Bank Accept Date",
+        "Maturity Date",
+        "Payment. Rcv Dt",
+        "Date",
+        "Invoice Date",
+    ]
+    date_cols = list(dict.fromkeys(date_cols))
+
     if search_text:
-        mask = pft.astype(str).apply(
-            lambda c: c.str.contains(search_text, case=False, na=False)).any(axis=1)
+        # Match across ALL columns.
+        # Only date columns are converted to the same visible format (DD MMM YYYY)
+        # before matching, so user-typed dates will be found correctly.
+        pft_for_search = pft.copy()
+
+        for col in date_cols:
+            if col in pft_for_search.columns:
+                pft_for_search[col] = (
+                    pd.to_datetime(pft_for_search[col], errors="coerce")
+                    .dt.strftime("%d %b %Y")
+                    .fillna("")
+                )
+
+        # Match across ALL columns as strings.
+        # This ensures values like Bank Refno (even if Excel imported as numeric)
+        # still match against the typed text.
+        tmp = pft_for_search.copy()
+        tmp = tmp.astype(str)
+
+        # Ensure date columns use visible DD MMM YYYY representation only for matching.
+        for col in date_cols:
+            if col in tmp.columns:
+                tmp[col] = (
+                    pd.to_datetime(pft_for_search[col], errors="coerce")
+                    .dt.strftime("%d %b %Y")
+                    .fillna("")
+                    .astype(str)
+                )
+
+        mask = tmp.apply(lambda c: c.str.contains(search_text, case=False, na=False)).any(axis=1)
         pft = pft[mask]
 
-    date_cols = ["Bank Submition Date","Bank Ref Date","Lc Date",
-                 "Bank Accept Date","Maturity Date","Payment. Rcv Dt","Date"]
+
+
+    # Keep datetime dtype in the visible columns so Streamlit sorting works.
+    # UI format is handled by st.column_config.DateColumn.
     for col in date_cols:
         if col in pft.columns:
-            pft[col] = pd.to_datetime(pft[col], errors="coerce").dt.strftime("%d %b %Y").fillna("")
+            dtcol = pd.to_datetime(pft[col], errors="coerce")
+            pft[col + "__dt"] = dtcol
+            pft[col] = dtcol
+
+
 
     internal_cols = ["_date","MonthSort","Month","WeekSort","Week","DayName"]
+    # hidden datetime helpers for correct sorting
+    hidden_dt_cols = [c + "__dt" for c in date_cols if c in pft.columns]
+    internal_cols = internal_cols + hidden_dt_cols
     col_order = [
         "Firm Name","Our Bank","Bank Submition Date","Bank Ref Date","Bank Refno",
         "Party Name","LC No","Lc Date","Tenor","Bank Name","Invoice No","Invoice Date",
@@ -1315,7 +1364,7 @@ with t_payment:
         "Payment. Rcv Dt","Sales Person","Week","DayName","Date","Status",
     ]
     export_cols = [c for c in col_order if c in pft.columns]
-    extra_cols  = [c for c in pft.columns if c not in export_cols and c not in internal_cols]
+    extra_cols  = [c for c in pft.columns if c not in export_cols and c not in internal_cols and c not in hidden_dt_cols]
     pft_export  = pft[export_cols + extra_cols]
     pft_display = pft_export.copy()
 
@@ -1325,16 +1374,21 @@ with t_payment:
         try: total_invoice_value = float(pft_export["Invoice Value"].sum())
         except Exception: pass
 
-    if "Invoice Value" in pft_display.columns:
-        pft_display["Invoice Value"] = pft_display["Invoice Value"].map(lambda x: f"${x:,.2f}")
+    # Keep numeric values for proper sorting.
+    # Display formatting will be handled via st.column_config below.
+    # (Do NOT convert Invoice Value to currency string here.)
 
     # Column widths
     def make_col_widths(dataframe, min_w=100, max_w=450, cw=8):
         text_df = dataframe.fillna("").astype(str)
         widths  = {}
         for col in text_df.columns:
-            try: max_len = float(text_df[col].str.len().max())
-            except Exception: max_len = 0.0
+            try:
+                max_len = float(text_df[col].str.len().max())
+                if pd.isna(max_len):
+                    max_len = 0.0
+            except Exception:
+                max_len = 0.0
             w = max(len(str(col)), int(max_len)) * cw + 24
             widths[col] = min(max_w, max(min_w, w))
         if "Bank Refno"    in widths: widths["Bank Refno"]    = max(widths["Bank Refno"],    285)
@@ -1343,7 +1397,29 @@ with t_payment:
         return widths
 
     col_widths  = make_col_widths(pft_display)
-    col_config  = {c: st.column_config.TextColumn(width=col_widths[c]) for c in pft_display.columns}
+
+    # Use numeric columns for proper ascending/descending sorting.
+    # For currency-like columns, keep numbers and only apply formatting via column_config.
+    col_config = {}
+    date_cols_set = set(date_cols)
+    for c in pft_display.columns:
+        if c == "Invoice Value" and pd.api.types.is_numeric_dtype(pft_display[c]):
+            col_config[c] = st.column_config.NumberColumn(
+                format="$%0.2f",
+                width=col_widths[c],
+            )
+        elif c in date_cols_set:
+            # Sort uses datetime dtype; format for display.
+            col_config[c] = st.column_config.DateColumn(
+                width=col_widths[c],
+                format="DD MMM YYYY",
+            )
+        elif pd.api.types.is_numeric_dtype(pft_display[c]):
+            col_config[c] = st.column_config.NumberColumn(width=col_widths[c])
+        else:
+            col_config[c] = st.column_config.TextColumn(width=col_widths[c])
+
+
     st.dataframe(pft_display, use_container_width=True, hide_index=True,
                  height=500, column_config=col_config)
     if "Invoice Value" in pft_export.columns:
