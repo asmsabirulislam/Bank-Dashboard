@@ -208,11 +208,20 @@ sparty = st.sidebar.multiselect("Party Name",
 
 min_date = raw["_date"].min(); max_date = raw["_date"].max()
 if pd.isna(min_date) or pd.isna(max_date):
-    date_range = st.sidebar.date_input("Date Range",
-        value=(pd.Timestamp.today().date(), pd.Timestamp.today().date()))
+    today = pd.Timestamp.today().date()
+    date_range = st.sidebar.date_input(
+        "Date Range",
+        value=(today, today),
+        min_value=today,
+        max_value=today,
+    )
 else:
-    date_range = st.sidebar.date_input("Date Range",
-        value=(min_date.date(), max_date.date()))
+    date_range = st.sidebar.date_input(
+        "Date Range",
+        value=(min_date.date(), max_date.date()),
+        min_value=min_date.date(),
+        max_value=max_date.date(),
+    )
 
 df = raw.copy()
 if sm:     df = df[df["MonthSort"].astype(str).isin(sm)]
@@ -858,12 +867,20 @@ with t_weekly:
     })
 
     summary = total.merge(paid_cnt, on="Week", how="left").merge(val, on="Week", how="left").fillna(0)
+
+    # Payment rate (%): Paid / Submissions
     summary["Payment Rate"] = (summary["Paid"] / summary["Submissions"] * 100).round(1)
 
     # Total invoice sum for the week (all statuses)
     total_val = wk_status.groupby("Week")["Invoice Value"].sum().reset_index(name="Invoice Value (USD)")
 
     summary = summary.merge(total_val, on="Week", how="left")
+
+    # Ensure expected pivot columns exist even if a status category is missing
+    for _col in ["Paid Value", "Accepted Value", "Not Accepted Value"]:
+        if _col not in summary.columns:
+            summary[_col] = 0
+
     summary = summary[[
         "Week",
         "Submissions",
