@@ -19,7 +19,7 @@ import streamlit as st
 from io import BytesIO
 
 try:
-    from reportlab.lib.pagesizes import A3, landscape
+    from reportlab.lib.pagesizes import A3, landscape as _landscape
     from reportlab.lib import colors
     from reportlab.lib.units import inch
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -208,20 +208,11 @@ sparty = st.sidebar.multiselect("Party Name",
 
 min_date = raw["_date"].min(); max_date = raw["_date"].max()
 if pd.isna(min_date) or pd.isna(max_date):
-    today = pd.Timestamp.today().date()
-    date_range = st.sidebar.date_input(
-        "Date Range",
-        value=(today, today),
-        min_value=today,
-        max_value=today,
-    )
+    date_range = st.sidebar.date_input("Date Range",
+        value=(pd.Timestamp.today().date(), pd.Timestamp.today().date()))
 else:
-    date_range = st.sidebar.date_input(
-        "Date Range",
-        value=(min_date.date(), max_date.date()),
-        min_value=min_date.date(),
-        max_value=max_date.date(),
-    )
+    date_range = st.sidebar.date_input("Date Range",
+        value=(min_date.date(), max_date.date()))
 
 df = raw.copy()
 if sm:     df = df[df["MonthSort"].astype(str).isin(sm)]
@@ -337,7 +328,7 @@ st.markdown("")
 # ─────────────────────────────────────────────────────────────────────────────
 # TABS
 # ─────────────────────────────────────────────────────────────────────────────
-(t_daily, t_overview, t_weekly, t_firm, t_banks, t_parties, t_payment) = st.tabs([
+(t_daily, t_overview, t_weekly, t_firm, t_banks, t_parties, t_payment, t_accept, t_asm) = st.tabs([
     "📅 Daily Analysis",
     "📊 Overview",
     "📅 Weekly Analysis",
@@ -345,6 +336,8 @@ st.markdown("")
     "🏦 Banks",
     "👥 Top Parties",
     "🔄 Payment Status",
+    "✅ Bank Accept Analysis",
+    "📊 Asm Analysis"
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -414,7 +407,7 @@ with t_daily:
             tbl["Value"]            = tbl["Value"].map(lambda x: f"${x:,.2f}")
             tbl["Cumulative Value"] = tbl["Cumulative Value"].map(lambda x: f"${x:,.2f}")
             tbl["Qty"]              = tbl["Qty"].map(lambda x: f"{x:,.0f}")
-            st.dataframe(tbl, use_container_width=True, hide_index=True, height=360)
+            st.dataframe(tbl, width='stretch', hide_index=True, height=360)
 
         with dc2:
             sh("📈 Daily Invoice Value")
@@ -424,7 +417,7 @@ with t_daily:
                 xaxis=dict(title="Date", tickangle=-40, tickfont=dict(size=9), gridcolor="#1a2a3a"),
                 yaxis=dict(title="Invoice Value (USD)", gridcolor="#1a2a3a"),
                 height=320, showlegend=False)
-            st.plotly_chart(fig_d, use_container_width=True)
+            st.plotly_chart(fig_d, width='stretch')
 
         with dc3:
             sh("📈 Cumulative Invoice Value")
@@ -437,7 +430,7 @@ with t_daily:
                 xaxis=dict(title="Date", tickangle=-40, tickfont=dict(size=9), gridcolor="#1a2a3a"),
                 yaxis=dict(title="Cumulative Value (USD)", gridcolor="#1a2a3a"),
                 height=320, showlegend=False)
-            st.plotly_chart(fig_cum, use_container_width=True)
+            st.plotly_chart(fig_cum, width='stretch')
     else:
         st.warning("No daily data available for the current filters.")
 
@@ -461,13 +454,13 @@ with t_daily:
                          hole=0.48, color_discrete_sequence=C)
         fig_pie.update_layout(**PL)
         fig_pie.update_traces(textinfo="label+percent", textfont_size=11)
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, width='stretch')
     with br2:
         sh("🏦 Our Bank Table")
         tb = by_bank_ord.copy()
         tb["Value"] = tb["Value"].map(lambda x: f"${x:,.2f}")
         tb.columns  = ["Our Bank","Invoice Value","Submissions"]
-        st.dataframe(tb, use_container_width=True, hide_index=True, height=320)
+        st.dataframe(tb, width='stretch', hide_index=True, height=320)
 
     st.markdown("---")
 
@@ -487,13 +480,13 @@ with t_daily:
             xaxis=dict(title="Invoice Value (USD)", tickformat="$.2s", gridcolor="#1a2a3a"),
             yaxis=dict(title="", autorange="reversed"),
             showlegend=False, height=360)
-        st.plotly_chart(fig_f, use_container_width=True)
+        st.plotly_chart(fig_f, width='stretch')
     with f2:
         sh("🏢 Firm Name Table")
         tf = top_firms.copy()
         tf["Value"] = tf["Value"].map(lambda x: f"${x:,.2f}")
         tf.columns  = ["Firm Name","Invoice Value","Submissions"]
-        st.dataframe(tf, use_container_width=True, hide_index=True, height=360)
+        st.dataframe(tf, width='stretch', hide_index=True, height=360)
 
     st.markdown("---")
 
@@ -518,7 +511,7 @@ with t_daily:
         sp_show["Pct"]   = sp_show["Pct"].map(lambda x: f"{x:.1f}%")
         sp_show["Paid"]  = sp_show["Paid"].astype(int)
         sp_show.columns  = ["Sales Person","Invoice Value","Submissions","Paid","Pay Rate","% of Total"]
-        st.dataframe(sp_show, use_container_width=True, hide_index=True, height=360)
+        st.dataframe(sp_show, width='stretch', hide_index=True, height=360)
     with s2:
         sh("👤 Sales Person Chart")
         fig_sp = px.bar(spg_d.head(12), x="Value", y="Sales Person", orientation="h",
@@ -529,7 +522,7 @@ with t_daily:
             xaxis=dict(title="Invoice Value (USD)", tickformat="$.2s", gridcolor="#1a2a3a"),
             yaxis=dict(title="", autorange="reversed"),
             showlegend=False, height=360)
-        st.plotly_chart(fig_sp, use_container_width=True)
+        st.plotly_chart(fig_sp, width='stretch')
 
     st.markdown("---")
 
@@ -548,13 +541,13 @@ with t_daily:
                            color_discrete_sequence=C, hole=0.45)
             fig_t.update_layout(**PL)
             fig_t.update_traces(textinfo="label+percent", textfont_size=11)
-            st.plotly_chart(fig_t, use_container_width=True)
+            st.plotly_chart(fig_t, width='stretch')
         else:
             st.warning("Tenor column not available.")
     with t1b:
         sh("⏱ Tenor Distribution Table")
         if not ten_dist.empty:
-            st.dataframe(ten_dist, use_container_width=True, hide_index=True, height=300)
+            st.dataframe(ten_dist, width='stretch', hide_index=True, height=300)
 
     st.markdown("---")
 
@@ -572,14 +565,14 @@ with t_daily:
         fig_tp.update_layout(**PL_GENERAL,
             xaxis=dict(title="Invoice Value (USD)", tickformat="$.2s", gridcolor="#1a2a3a"),
             yaxis=dict(title=""), showlegend=False, height=360)
-        st.plotly_chart(fig_tp, use_container_width=True)
+        st.plotly_chart(fig_tp, width='stretch')
     with p2:
         sh("🏭 Top 10 Party Names Table")
         tbp = t_party_d.copy()
         tbp.insert(0, "Rank", range(1, len(tbp)+1))
         tbp["Value"] = tbp["Value"].map(lambda x: f"${x:,.2f}")
         tbp.columns  = ["Rank","Party Name","Invoice Value","Submissions"]
-        st.dataframe(tbp, use_container_width=True, hide_index=True, height=360)
+        st.dataframe(tbp, width='stretch', hide_index=True, height=360)
 
     st.markdown("---")
 
@@ -598,7 +591,7 @@ with t_daily:
             xaxis=dict(title="Invoice Value (USD)", tickformat="$.2s", gridcolor="#1a2a3a"),
             yaxis=dict(title="", autorange="reversed"),
             showlegend=False, height=500)
-        st.plotly_chart(fig_bb, use_container_width=True)
+        st.plotly_chart(fig_bb, width='stretch')
     with b2:
         sh("🏛 Buyer's Bank Table")
         tbob = buyer_bank.copy()
@@ -606,7 +599,7 @@ with t_daily:
         tbob["% Share"] = (tbob["Value"] / total_bb * 100).map(lambda x: f"{x:.1f}%")
         tbob["Value"]   = tbob["Value"].map(lambda x: f"${x:,.2f}")
         tbob.columns    = ["Bank Name","Invoice Value","Submissions","% Share"]
-        st.dataframe(tbob, use_container_width=True, hide_index=True, height=500)
+        st.dataframe(tbob, width='stretch', hide_index=True, height=500)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — OVERVIEW
@@ -741,7 +734,7 @@ with t_overview:
         tbl["Accepted Count"] = tbl["Accepted Count"].astype(int)
         tbl["Paid Count %"] = tbl["Paid Count %"].map(lambda x: f"{x:.1f}%")
 
-        st.dataframe(tbl, use_container_width=True, hide_index=True)
+        st.dataframe(tbl, width='stretch', hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — WEEKLY ANALYSIS
@@ -866,21 +859,19 @@ with t_weekly:
         "Not Accepted":"Not Accepted Value",
     })
 
-    summary = total.merge(paid_cnt, on="Week", how="left").merge(val, on="Week", how="left").fillna(0)
+    # Ensure expected columns always exist (even if a status category is missing)
+    for _col in ["Paid Value","Accepted Value","Not Accepted Value"]:
+        if _col not in val.columns:
+            val[_col] = 0
 
-    # Payment rate (%): Paid / Submissions
+    summary = total.merge(paid_cnt, on="Week", how="left").merge(val, on="Week", how="left").fillna(0)
     summary["Payment Rate"] = (summary["Paid"] / summary["Submissions"] * 100).round(1)
+
 
     # Total invoice sum for the week (all statuses)
     total_val = wk_status.groupby("Week")["Invoice Value"].sum().reset_index(name="Invoice Value (USD)")
 
     summary = summary.merge(total_val, on="Week", how="left")
-
-    # Ensure expected pivot columns exist even if a status category is missing
-    for _col in ["Paid Value", "Accepted Value", "Not Accepted Value"]:
-        if _col not in summary.columns:
-            summary[_col] = 0
-
     summary = summary[[
         "Week",
         "Submissions",
@@ -926,7 +917,7 @@ with t_weekly:
     summary_total["Payment Rate"] = summary_total["Payment Rate"].map(lambda x: f"{float(x):.1f}%")
     summary_total["Paid"] = summary_total["Paid"].astype(int)
 
-    st.dataframe(summary_total, use_container_width=True, hide_index=True)
+    st.dataframe(summary_total, width='stretch', hide_index=True)
 
 
     # ── Download Weekly Summary as PDF ────────────────────────────────
@@ -1146,7 +1137,7 @@ with t_firm:
         ft["% Share"] = (ft["Inv"]/inv*100).map(lambda x: f"{x:.1f}%")
         ft["Inv"]     = ft["Inv"].map(lambda x: f"${x:,.2f}")
         ft.columns    = ["Firm","Invoice Value (USD)","Submissions","% Share"]
-        st.dataframe(ft, use_container_width=True, hide_index=True)
+        st.dataframe(ft, width='stretch', hide_index=True)
     with r:
         sh("🧑‍💼 Sales Person — Invoice Value (Top 12)")
         fig2 = px.bar(spg.head(12), y="Sales Person", x="Inv", orientation="h",
@@ -1227,14 +1218,14 @@ with t_banks:
         ob["% Share"] = (ob["Inv"]/inv*100).map(lambda x: f"{x:.1f}%")
         ob["Inv"]     = ob["Inv"].map(lambda x: f"${x:,.2f}")
         ob.columns    = ["Our Bank","Invoice Value (USD)","Submissions","% Share"]
-        st.dataframe(ob, use_container_width=True, hide_index=True)
+        st.dataframe(ob, width='stretch', hide_index=True)
     with b2:
         sh("Top Party Banks Detail")
         pb = t_bname.copy()
         pb["% Share"] = (pb["Inv"]/inv*100).map(lambda x: f"{x:.1f}%")
         pb["Inv"]     = pb["Inv"].map(lambda x: f"${x:,.2f}")
         pb.columns    = ["Bank Name","Invoice Value (USD)","Submissions","% Share"]
-        st.dataframe(pb, use_container_width=True, hide_index=True)
+        st.dataframe(pb, width='stretch', hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 — TOP PARTIES
@@ -1260,7 +1251,7 @@ with t_parties:
         pt["Inv"]     = pt["Inv"].map(lambda x: f"${x:,.2f}")
         pt            = pt[["#","Party Name","Inv","N","% Share"]]
         pt.columns    = ["#","Party","Invoice Value","Subs","% Share"]
-        st.dataframe(pt, use_container_width=True, hide_index=True)
+        st.dataframe(pt, width='stretch', hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 6 — PAYMENT STATUS
@@ -1326,9 +1317,9 @@ with t_payment:
     date_cols = list(dict.fromkeys(date_cols))
 
     if search_text:
-        # Match across ALL columns.
+        # Match across ALL columns as strings.
         # Only date columns are converted to the same visible format (DD MMM YYYY)
-        # before matching, so user-typed dates will be found correctly.
+        # before matching.
         pft_for_search = pft.copy()
 
         for col in date_cols:
@@ -1339,22 +1330,7 @@ with t_payment:
                     .fillna("")
                 )
 
-        # Match across ALL columns as strings.
-        # This ensures values like Bank Refno (even if Excel imported as numeric)
-        # still match against the typed text.
-        tmp = pft_for_search.copy()
-        tmp = tmp.astype(str)
-
-        # Ensure date columns use visible DD MMM YYYY representation only for matching.
-        for col in date_cols:
-            if col in tmp.columns:
-                tmp[col] = (
-                    pd.to_datetime(pft_for_search[col], errors="coerce")
-                    .dt.strftime("%d %b %Y")
-                    .fillna("")
-                    .astype(str)
-                )
-
+        tmp = pft_for_search.astype(str)
         mask = tmp.apply(lambda c: c.str.contains(search_text, case=False, na=False)).any(axis=1)
         pft = pft[mask]
 
@@ -1384,6 +1360,7 @@ with t_payment:
     extra_cols  = [c for c in pft.columns if c not in export_cols and c not in internal_cols and c not in hidden_dt_cols]
     pft_export  = pft[export_cols + extra_cols]
     pft_display = pft_export.copy()
+
 
     # Total invoice value
     total_invoice_value = 0.0
@@ -1437,7 +1414,7 @@ with t_payment:
             col_config[c] = st.column_config.TextColumn(width=col_widths[c])
 
 
-    st.dataframe(pft_display, use_container_width=True, hide_index=True,
+    st.dataframe(pft_display, width='stretch', hide_index=True,
                  height=500, column_config=col_config)
     if "Invoice Value" in pft_export.columns:
         st.markdown(f"**Total Invoice Value (filtered):** ${total_invoice_value:,.2f}")
@@ -1462,7 +1439,9 @@ with t_payment:
                             custom_widths=None, generated_at=""):
             buf = BytesIO()
             lm = rm = tm = bm = 24
-            pw, ph = landscape(A3)
+            # Ensure `landscape` is defined for both runtime and static analysis
+            from reportlab.lib.pagesizes import landscape as _landscape
+            pw, ph = _landscape(A3)
             uw = pw - lm - rm
             hf = "Helvetica-Bold"; cf = "Helvetica"; hfs = 10; cfs = 8
             min_cw = 1.2*inch; max_cw = 4.5*inch
@@ -1551,7 +1530,7 @@ with t_payment:
                 canvas.setFont(hf,8); canvas.drawRightString(pw-rm,bm/2,"ASM")
                 canvas.restoreState()
 
-            doc = SimpleDocTemplate(buf, pagesize=landscape(A3),
+            doc = SimpleDocTemplate(buf, pagesize=_landscape(A3),
                 leftMargin=lm, rightMargin=rm, topMargin=tm+28, bottomMargin=bm)
             doc.build(pages, onFirstPage=ph2, onLaterPages=ph2)
             buf.seek(0); return buf.read()
@@ -1585,6 +1564,519 @@ with t_payment:
             col_pdf.error(f"Could not generate PDF: {e}")
     else:
         col_pdf.warning("Install reportlab: pip install reportlab")
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 8 —  Bank Accept Analysis
+# ══════════════════════════════════════════════════════════════════════════════
+
+with t_accept:
+    st.markdown("## ✅ Bank Accept Analysis")
+    
+    # ── Status Column তৈরি ──────────────────────────────────────────────
+    df["Status"] = df.apply(lambda r:
+        "Paid" if pd.notna(r["Payment. Rcv Dt"]) else
+        "Accepted" if pd.notna(r["Bank Accept Date"]) else
+        "Not Accepted", axis=1)
+    
+    # ── Overall Statistics ──────────────────────────────────────────────
+    total_acc = df[df["Status"]=="Accepted"]["Invoice Value"].sum()
+    total_nacc = df[df["Status"]=="Not Accepted"]["Invoice Value"].sum()
+    total_paid = df[df["Status"]=="Paid"]["Invoice Value"].sum()
+    total_value = df["Invoice Value"].sum()
+    acceptance_rate = (total_acc / total_value * 100) if total_value > 0 else 0
+    
+    # KPI Cards
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("✅ Accepted Value", usd(total_acc))
+    col2.metric("❌ Not Accepted Value", usd(total_nacc))
+    col3.metric("💰 Paid Value", usd(total_paid))
+    col4.metric("📈 Acceptance Rate", f"{acceptance_rate:.1f}%")
+    
+    st.markdown("---")
+    
+    # ── Status Distribution Pie Chart ──────────────────────────────────
+    st.markdown("### 📊 Status Distribution")
+    fig_acc = px.pie(df, names="Status", values="Invoice Value",
+                     color_discrete_sequence=["#00c9a7", "#1a8fff", "#ff6b35"], 
+                     hole=0.45)
+    fig_acc.update_layout(**PL, height=350)
+    st.plotly_chart(fig_acc, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # ════════════════════════════════════════════════════════════════════
+    # 📅 Bank Accept Date-wise Analysis (প্রধান অংশ)
+    # ════════════════════════════════════════════════════════════════════
+    st.markdown("## 📅 Bank Accept Date-wise Analysis")
+   
+    # ── শুধুমাত্র Accepted রেকর্ডগুলো ──────────────────────────────────
+    df_accepted = df[df["Status"]=="Accepted"].copy()
+    
+    if not df_accepted.empty:
+        # ── Date-wise Summary (প্রতিটি Date-এর জন্য সব Firm) ──────────
+        datewise_summary = (df_accepted.groupby([df_accepted["Bank Accept Date"].dt.date, "Firm Name"])
+                            .agg(
+                                AcceptedCount=("LC No", "count"),
+                                AcceptedValue=("Invoice Value", "sum")
+                            )
+                            .reset_index()
+                            .sort_values(["Bank Accept Date", "AcceptedValue"], ascending=[True, False]))
+        
+        # ── Date-wise Total (সব Firm মিলিয়ে) ───────────────────────────
+        datewise_total = (df_accepted.groupby(df_accepted["Bank Accept Date"].dt.date)
+                          .agg(
+                              TotalAcceptedCount=("LC No", "count"),
+                              TotalAcceptedValue=("Invoice Value", "sum")
+                          )
+                          .reset_index()
+                          .sort_values("Bank Accept Date"))
+        
+        # ── Trend Chart (Line Chart) ────────────────────────────────────
+        st.markdown("### 📈 Daily Accepted Value Trend")
+        
+        # সব Firm-এর জন্য আলাদা লাইন
+        fig_trend = go.Figure()
+        
+        # প্রতিটি Firm-এর জন্য আলাদা ট্রেস যোগ করি (Top 10 Firms)
+        top_firms = (df_accepted.groupby("Firm Name")["Invoice Value"]
+                     .sum()
+                     .sort_values(ascending=False)
+                     .head(10)
+                     .index.tolist())
+        
+        # শুধু Top 10 Firm দেখাবো, বাকিগুলো "Others" হিসেবে
+        df_accepted["Firm Group"] = df_accepted["Firm Name"].apply(
+            lambda x: x if x in top_firms else "Others"
+        )
+        
+        # প্রতিটি Firm Group-এর জন্য Time Series
+        for firm in top_firms + ["Others"]:
+            firm_data = df_accepted[df_accepted["Firm Group"] == firm]
+            if not firm_data.empty:
+                daily_firm = (firm_data.groupby(firm_data["Bank Accept Date"].dt.date)
+                              .agg(Value=("Invoice Value", "sum"))
+                              .reset_index()
+                              .sort_values("Bank Accept Date"))
+                
+                fig_trend.add_scatter(
+                    x=daily_firm["Bank Accept Date"],
+                    y=daily_firm["Value"],
+                    mode="lines+markers",
+                    name=firm,
+                    line=dict(width=2),
+                    marker=dict(size=5)
+                )
+        
+        fig_trend.update_layout(
+            **PL_GENERAL,
+            xaxis=dict(title="Bank Accept Date", tickangle=-45, gridcolor="#1a2a3a"),
+            yaxis=dict(title="Accepted Value (USD)", tickformat="$.2s", gridcolor="#1a2a3a"),
+            legend=dict(orientation="h", y=1.1, x=0, bgcolor="rgba(0,0,0,0)", 
+                       font=dict(color="#8899aa", size=9)),
+            height=400,
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_trend, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # ── Date-wise Summary Table ──────────────────────────────────────
+        st.markdown("### 📋 Date-wise Accepted Summary")
+        
+        # Pivot Table তৈরি: Date × Firm → Accepted Value
+        pivot_table = (df_accepted.pivot_table(
+            index=df_accepted["Bank Accept Date"].dt.date,
+            columns="Firm Name",
+            values="Invoice Value",
+            aggfunc="sum",
+            fill_value=0
+        ))
+        
+        # Total column যোগ করি
+        pivot_table["Total"] = pivot_table.sum(axis=1)
+        
+        # Count table
+        pivot_count = (df_accepted.pivot_table(
+            index=df_accepted["Bank Accept Date"].dt.date,
+            columns="Firm Name",
+            values="LC No",
+            aggfunc="count",
+            fill_value=0
+        ))
+        pivot_count["Total"] = pivot_count.sum(axis=1)
+        
+        # ── Display Table with formatting ───────────────────────────────
+        # Format করে দেখানো
+        st.markdown("#### 💰 Accepted Value by Date and Firm")
+        
+        # Display formatted table
+        display_df = pivot_table.copy()
+        for col in display_df.columns:
+            display_df[col] = display_df[col].map(lambda x: f"${x:,.2f}")
+        
+        st.dataframe(display_df, use_container_width=True, height=400)
+        
+        # ── Count Table ──────────────────────────────────────────────────
+        st.markdown("#### 📦 Accepted Count by Date and Firm")
+        st.dataframe(pivot_count, use_container_width=True, height=400)
+        
+        st.markdown("---")
+        
+        # ── Detailed Firm-wise Breakdown ─────────────────────────────────
+        st.markdown("### 🏢 Firm-wise Detailed Breakdown")
+        
+        # Firm-wise summary
+        firm_summary = (df_accepted.groupby("Firm Name")
+                        .agg(
+                            TotalAcceptedValue=("Invoice Value", "sum"),
+                            TotalAcceptedCount=("LC No", "count"),
+                            FirstAcceptDate=("Bank Accept Date", "min"),
+                            LastAcceptDate=("Bank Accept Date", "max"),
+                            AvgValuePerAcceptance=("Invoice Value", "mean")
+                        )
+                        .reset_index()
+                        .sort_values("TotalAcceptedValue", ascending=False))
+        
+        # Formatting
+        firm_summary["TotalAcceptedValue"] = firm_summary["TotalAcceptedValue"].map(lambda x: f"${x:,.2f}")
+        firm_summary["AvgValuePerAcceptance"] = firm_summary["AvgValuePerAcceptance"].map(lambda x: f"${x:,.2f}")
+        firm_summary["FirstAcceptDate"] = firm_summary["FirstAcceptDate"].dt.strftime("%d %b %Y")
+        firm_summary["LastAcceptDate"] = firm_summary["LastAcceptDate"].dt.strftime("%d %b %Y")
+        
+        st.dataframe(firm_summary, use_container_width=True, hide_index=True)
+        
+        st.markdown("---")
+        
+        # ── Bar Chart: Top Firms by Accepted Value ──────────────────────
+        st.markdown("### 📊 Top Firms by Accepted Value")
+        
+        top_firms_chart = firm_summary.head(10).copy()
+        top_firms_chart["TotalAcceptedValue_Num"] = (
+            top_firms_chart["TotalAcceptedValue"]
+            .str.replace("$", "", regex=False)
+            .str.replace(",", "", regex=False)
+            .astype(float)
+        )
+        
+        fig_firm = px.bar(top_firms_chart, 
+                         y="Firm Name", 
+                         x="TotalAcceptedValue_Num",
+                         orientation="h",
+                         text=top_firms_chart["TotalAcceptedValue_Num"].map(lambda x: f"${x:,.2f}"),
+                         color="Firm Name",
+                         color_discrete_sequence=C,
+                         title="Top 10 Firms by Accepted Value")
+        fig_firm.update_traces(textposition="outside", textfont_size=10)
+        fig_firm.update_layout(**PL_GENERAL,
+            xaxis=dict(title="Accepted Value (USD)", tickformat="$.2s", gridcolor="#1a2a3a"),
+            yaxis=dict(title="", autorange="reversed"),
+            showlegend=False,
+            height=400)
+        st.plotly_chart(fig_firm, use_container_width=True)
+        
+    else:
+        st.warning("⚠️ No accepted records found for the current filters.")
+        
+    # ── Footer ──────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.caption(f"Showing acceptance data for {len(df_accepted):,} accepted records out of {len(df):,} total submissions")
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 9 —  Asm Analysis
+# ══════════════════════════════════════════════════════════════════════════════
+# t_accept tab-এর জন্য সম্পূর্ণ কোড প্রতিস্থাপন করুন:
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 8 — ASM Analysis (t_asm) - ঠিক t_accept-এর মতো
+# ══════════════════════════════════════════════════════════════════════════════
+with t_asm:
+    st.markdown("## 📊 ASM Analysis")
+    
+    # Status কলাম তৈরি
+    df["Status"] = df.apply(lambda r:
+        "Paid" if pd.notna(r["Payment. Rcv Dt"]) else
+        "Accepted" if pd.notna(r["Bank Accept Date"]) else
+        "Not Accepted", axis=1)
+    
+    # Overall Statistics
+    total_acc = df[df["Status"]=="Accepted"]["Invoice Value"].sum()
+    total_nacc = df[df["Status"]=="Not Accepted"]["Invoice Value"].sum()
+    total_paid = df[df["Status"]=="Paid"]["Invoice Value"].sum()
+    
+    # KPI Cards
+    c1, c2, c3 = st.columns(3)
+    c1.metric("✅ Accepted Value", usd(total_acc))
+    c2.metric("❌ Not Accepted Value", usd(total_nacc))
+    c3.metric("💰 Paid Value", usd(total_paid))
+    
+    # Acceptance Rate
+    total_value = df["Invoice Value"].sum()
+    acceptance_rate = (total_acc / total_value * 100) if total_value > 0 else 0
+    st.metric("📈 Overall Acceptance Rate", f"{acceptance_rate:.1f}%")
+    
+    st.markdown("---")
+    
+    # Status Distribution Pie Chart
+    fig_acc = px.pie(df, names="Status", values="Invoice Value",
+                     color_discrete_sequence=["#00c9a7", "#1a8fff", "#ff6b35"], 
+                     hole=0.45)
+    fig_acc.update_layout(**PL)
+    st.plotly_chart(fig_acc, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # By Accept Date Analysis
+    st.markdown("### 📅 Daily Acceptance Trend")
+    
+    # শুধুমাত্র Accepted রেকর্ডগুলো
+    df_acc = df[df["Status"]=="Accepted"].copy()
+    
+    if not df_acc.empty:
+        # Accept Date অনুযায়ী গ্রুপ
+        acc_trend = (df_acc.groupby(df_acc["Bank Accept Date"].dt.date)
+                     .agg(AcceptedValue=("Invoice Value","sum"),
+                          AcceptedCount=("LC No","count"))
+                     .reset_index()
+                     .sort_values("Bank Accept Date"))
+        
+        # Trend Chart
+        fig_acc_trend = go.Figure()
+        fig_acc_trend.add_scatter(
+            x=acc_trend["Bank Accept Date"],
+            y=acc_trend["AcceptedValue"],
+            mode="lines+markers",
+            line=dict(color="#00c9a7", width=2.5),
+            marker=dict(size=6)
+        )
+        fig_acc_trend.update_layout(**PL_GENERAL,
+            xaxis=dict(title="Bank Accept Date", tickangle=-40, gridcolor="#1a2a3a"),
+            yaxis=dict(title="Accepted Value (USD)", gridcolor="#1a2a3a"),
+            height=360, showlegend=False)
+        st.plotly_chart(fig_acc_trend, use_container_width=True)
+        
+        # Daily Table
+        acc_trend["AcceptedValue"] = acc_trend["AcceptedValue"].map(lambda x: f"${x:,.2f}")
+        st.dataframe(acc_trend, use_container_width=True, hide_index=True)
+    else:
+        st.info("No accepted records found for the current filters.")
+    
+    st.markdown("---")
+    
+    # Firm-wise Acceptance Rate
+    st.markdown("### 🏢 Firm-wise Acceptance Rate")
+    
+    firm_rate = (df.groupby("Firm Name")
+        .agg(
+            TotalValue=("Invoice Value","sum"),
+            AcceptedValue=("Invoice Value", lambda x: df.loc[x.index][df.loc[x.index,"Status"]=="Accepted"]["Invoice Value"].sum())
+        )
+        .reset_index()
+    )
+    firm_rate["AcceptanceRate"] = (firm_rate["AcceptedValue"] / firm_rate["TotalValue"] * 100).round(1)
+    firm_rate["TotalValue"] = firm_rate["TotalValue"].map(lambda x: f"${x:,.2f}")
+    firm_rate["AcceptedValue"] = firm_rate["AcceptedValue"].map(lambda x: f"${x:,.2f}")
+    st.dataframe(firm_rate, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # Bank-wise Accepted Value
+    st.markdown("### 🏦 Bank-wise Accepted Value")
+    by_bank_acc = (df[df["Status"]=="Accepted"]
+                   .groupby("Our Bank")
+                   .agg(Value=("Invoice Value","sum"), Count=("LC No","count"))
+                   .reset_index().sort_values("Value", ascending=False))
+    
+    if not by_bank_acc.empty:
+        fig_bank_acc = px.bar(by_bank_acc, x="Our Bank", y="Value",
+                              text=by_bank_acc["Value"].map(usd),
+                              color="Our Bank", color_discrete_sequence=C)
+        fig_bank_acc.update_layout(**PL_GENERAL, showlegend=False)
+        st.plotly_chart(fig_bank_acc, use_container_width=True)
+        
+        
+        
+        # ══════════════════════════════════════════════════════════════════════════════
+# TAB 8 — ASM Analysis (t_asm) - Bank Accept Date কেন্দ্রিক Firm-wise Table
+# ══════════════════════════════════════════════════════════════════════════════
+with t_asm:
+    st.markdown("### Bank Accept Date Firm-wise Analysis")
+    
+    # Status কলাম তৈরি
+    df["Status"] = df.apply(lambda r:
+        "Paid" if pd.notna(r["Payment. Rcv Dt"]) else
+        "Accepted" if pd.notna(r["Bank Accept Date"]) else
+        "Not Accepted", axis=1)
+    
+    # ── সর্বশেষ available Bank Accept Date বের করা ──────────────────
+    last_acc_date = df["Bank Accept Date"].dropna().max()
+    
+    if pd.isna(last_acc_date):
+        st.warning("⚠️ কোন Accepted রেকর্ড পাওয়া যায়নি!")
+        st.stop()
+    
+    # ── সর্বশেষ Date-এর জন্য ডাটা ফিল্টার ──────────────────────────
+    df_latest = df[df["Bank Accept Date"].dt.date == last_acc_date.date()].copy()
+    
+    # ── KPI Cards ──────────────────────────────────────────────────────
+    total_acc_latest = df_latest[df_latest["Status"]=="Accepted"]["Invoice Value"].sum()
+    total_nacc_latest = df_latest[df_latest["Status"]=="Not Accepted"]["Invoice Value"].sum()
+    total_records_latest = len(df_latest)
+    
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("📅 Latest Accept Date", last_acc_date.strftime("%d %b %Y"))
+    c2.metric("✅ Accepted Value", usd(total_acc_latest))
+    c3.metric("❌ Not Accepted Value", usd(total_nacc_latest))
+    c4.metric("📋 Total Records", f"{total_records_latest:,}")
+    
+    st.markdown("---")
+    
+    # ── Firm-wise Accepted Summary Table ──────────────────────────────
+    st.markdown(f"### 🏢 Firm-wise Accepted Summary (Latest: {last_acc_date.strftime('%d %b %Y')})")
+    
+    # Firm-wise Accepted Count এবং Value
+    firm_acceptance = (df_latest[df_latest["Status"]=="Accepted"]
+                       .groupby("Firm Name")
+                       .agg(
+                           AcceptedCount=("LC No", "count"),
+                           AcceptedValue=("Invoice Value", "sum")
+                       )
+                       .reset_index()
+                       .sort_values("AcceptedValue", ascending=False))
+    
+    # সব Firm-এর জন্য Total Accepted Value এবং Count বের করা
+    total_accepted_count = firm_acceptance["AcceptedCount"].sum()
+    total_accepted_value = firm_acceptance["AcceptedValue"].sum()
+    
+    # Percentage কলাম যোগ করা
+    firm_acceptance["Percentage"] = (firm_acceptance["AcceptedValue"] / total_accepted_value * 100).round(1)
+    
+    # ── Table Display ──────────────────────────────────────────────────
+    display_table = firm_acceptance.copy()
+    display_table["AcceptedValue"] = display_table["AcceptedValue"].map(lambda x: f"${x:,.2f}")
+    display_table["Percentage"] = display_table["Percentage"].map(lambda x: f"{x:.1f}%")
+    display_table.columns = ["Firm Name", "Accepted Count", "Accepted Value (USD)", "% of Total"]
+    
+    # Total Row যোগ করা
+    total_row = {
+        "Firm Name": "**TOTAL**",
+        "Accepted Count": total_accepted_count,
+        "Accepted Value (USD)": f"**${total_accepted_value:,.2f}**",
+        "% of Total": "**100%**"
+    }
+    display_table = pd.concat([display_table, pd.DataFrame([total_row])], ignore_index=True)
+    
+    # Dataframe দেখানো
+    st.dataframe(
+        display_table, 
+        use_container_width=True, 
+        hide_index=True,
+        column_config={
+            "Firm Name": st.column_config.TextColumn("Firm Name", width="large"),
+            "Accepted Count": st.column_config.NumberColumn("Accepted Count", width="medium"),
+            "Accepted Value (USD)": st.column_config.TextColumn("Accepted Value (USD)", width="medium"),
+            "% of Total": st.column_config.TextColumn("% of Total", width="small")
+        }
+    )
+    
+    st.markdown("---")
+    
+    # ── Bar Chart: Firm-wise Accepted Value ────────────────────────────
+    st.markdown("### 📊 Firm-wise Accepted Value (Latest Date)")
+    
+    # Chart-এর জন্য ডাটা প্রস্তুত
+    chart_data = firm_acceptance.copy()
+    
+    if not chart_data.empty:
+        fig_firm = px.bar(
+            chart_data, 
+            y="Firm Name", 
+            x="AcceptedValue",
+            orientation="h",
+            text=chart_data["AcceptedValue"].map(lambda x: f"${x:,.2f}"),
+            color="Firm Name",
+            color_discrete_sequence=C,
+            title=f"Firm-wise Accepted Value on {last_acc_date.strftime('%d %b %Y')}"
+        )
+        fig_firm.update_traces(textposition="outside", textfont_size=10)
+        fig_firm.update_layout(
+            **PL_GENERAL,
+            xaxis=dict(title="Accepted Value (USD)", tickformat="$.2s", gridcolor="#1a2a3a"),
+            yaxis=dict(title="", autorange="reversed"),
+            showlegend=False,
+            height=400
+        )
+        st.plotly_chart(fig_firm, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # ── Pie Chart: Firm-wise Distribution ─────────────────────────────
+    st.markdown("### 🥧 Firm-wise Accepted Value Distribution")
+    
+    if len(chart_data) > 0:
+        fig_pie = px.pie(
+            chart_data, 
+            names="Firm Name", 
+            values="AcceptedValue",
+            color_discrete_sequence=C,
+            hole=0.45,
+            title=f"Distribution on {last_acc_date.strftime('%d %b %Y')}"
+        )
+        fig_pie.update_layout(**PL, height=400)
+        fig_pie.update_traces(textinfo="label+percent", textfont_size=11)
+        st.plotly_chart(fig_pie, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # ── Full Details: Latest Date-এর সব রেকর্ড ──────────────────────
+    st.markdown(f"### 📋 All Records on {last_acc_date.strftime('%d %b %Y')}")
+    
+    # Display latest date records
+    latest_records = df_latest[[
+        "Firm Name", 
+        "Our Bank", 
+        "Party Name", 
+        "Invoice Value", 
+        "Bank Accept Date",
+        "Status",
+        "Sales Person"
+    ]].copy()
+    
+    latest_records["Invoice Value"] = latest_records["Invoice Value"].map(lambda x: f"${x:,.2f}")
+    latest_records["Bank Accept Date"] = latest_records["Bank Accept Date"].dt.strftime("%d %b %Y")
+    
+    st.dataframe(latest_records, use_container_width=True, hide_index=True)
+    
+    # ── Download Button ──────────────────────────────────────────────
+    st.markdown("---")
+    
+    # Download CSV
+    csv_data = firm_acceptance.copy()
+    csv_data["AcceptedValue"] = csv_data["AcceptedValue"].map(lambda x: f"{x:,.2f}")
+    csv_data["Percentage"] = csv_data["Percentage"].map(lambda x: f"{x:.1f}%")
+    
+    # Total row for CSV
+    csv_total = {
+        "Firm Name": "TOTAL",
+        "AcceptedCount": total_accepted_count,
+        "AcceptedValue": f"{total_accepted_value:,.2f}",
+        "Percentage": "100%"
+    }
+    csv_data = pd.concat([csv_data, pd.DataFrame([csv_total])], ignore_index=True)
+    
+    st.download_button(
+        label="📥 Download Firm-wise Summary (CSV)",
+        data=csv_data.to_csv(index=False).encode("utf-8"),
+        file_name=f"firm_acceptance_{last_acc_date.strftime('%Y%m%d')}.csv",
+        mime="text/csv"
+    )
+    
+    # ── Footer ──────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.caption(f"📊 Latest Bank Accept Date: {last_acc_date.strftime('%d %b %Y')} |Total {total_records_latest:,} Record")
+        
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FOOTER
