@@ -84,171 +84,11 @@ def _apply_theme_css(theme: str):
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR — Theme first, then file upload, then filters
 # ─────────────────────────────────────────────────────────────────────────────
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SIDEBAR — Theme + File Upload + Filters (ডায়নামিক ভার্সন)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# --- ১. সেশন স্টেট ইনিশিয়ালাইজ (শুধু একবার) ---
-if 'filters_initialized' not in st.session_state:
-    st.session_state.filters_initialized = True
-    # ফিল্টারগুলোর ডিফল্ট মান (সব সিলেক্টেড, পুরো ডেট রেঞ্জ)
-    st.session_state.month_default = [str(m) for m in sorted(raw["MonthSort"].dropna().unique())]
-    st.session_state.firm_default = sorted(raw["Firm Name"].dropna().unique())
-    st.session_state.bank_default = sorted(raw["Our Bank"].dropna().unique())
-    sales_persons = sorted(raw["Sales Person"].dropna().unique())
-    st.session_state.sales_choices = (["(Blank)"] + sales_persons) if raw["Sales Person"].isna().any() else sales_persons
-    st.session_state.party_default = sorted(raw["Party Name"].dropna().unique())
-    # ডেট রেঞ্জের ডিফল্ট
-    min_d = raw["_date"].min()
-    max_d = raw["_date"].max()
-    st.session_state.date_min = min_d.date() if pd.notna(min_d) else pd.Timestamp.today().date()
-    st.session_state.date_max = max_d.date() if pd.notna(max_d) else pd.Timestamp.today().date()
-    # এক্সট্রা ফিল্টার (Invoice Value রেঞ্জ)
-    st.session_state.inv_min = float(raw["Invoice Value"].min()) if not raw["Invoice Value"].isna().all() else 0.0
-    st.session_state.inv_max = float(raw["Invoice Value"].max()) if not raw["Invoice Value"].isna().all() else 1.0
-
-# --- ২. সাইডবার UI শুরু ---
-st.sidebar.markdown("## 🎛️ Control Panel")
-
-# অ্যাকটিভ ফিল্টার কাউন্টার দেখানোর জন্য কলাম
-col1, col2 = st.sidebar.columns([3, 1])
-col1.markdown("### 🔽 Filters")
-active_count = 0  # পরে আপডেট হবে
-
-# স্মার্ট রিসেট বাটন (শুধু ফিল্টার রিসেট হয়, থিম ও অন্যান্য সেশন ভ্যারিয়েবল অক্ষুণ্ণ)
-if st.sidebar.button("🔄 Reset All Filters", use_container_width=True):
-    # শুধু ফিল্টার কীগুলো রিসেট করি
-    st.session_state.month_selected = None
-    st.session_state.firm_selected = None
-    st.session_state.bank_selected = None
-    st.session_state.sales_selected = None
-    st.session_state.party_selected = None
-    st.session_state.date_selected = None
-    st.session_state.inv_range = None
-    # (থিম, ফাইল ইত্যাদি থাকে)
-    st.rerun()
-
+st.sidebar.markdown("## 🏦 Bank Submit\nDashboard")
+theme_choice = st.sidebar.radio("Theme", ["dark", "light"], index=0)
+_apply_theme_css(theme_choice)
 st.sidebar.markdown("---")
 
-# থিম সিলেক্টর (পছন্দ মনে রাখে)
-theme_choice = st.sidebar.selectbox(
-    "🎨 Theme",
-    ["🌙 Dark", "☀️ Light"],
-    index=0 if st.session_state.get("theme", "Dark") == "Dark" else 1
-)
-st.session_state.theme = "Dark" if "Dark" in theme_choice else "Light"
-_apply_theme_css(st.session_state.theme.lower())
-st.sidebar.markdown("---")
-
-# --- ৩. ফিল্টার উইজেট (সেশন স্টেটের সাথে যুক্ত) ---
-
-# Month
-ml = [str(m) for m in sorted(raw["MonthSort"].dropna().unique())]
-if 'month_selected' not in st.session_state or st.session_state.month_selected is None:
-    st.session_state.month_selected = ml  # ডিফল্ট সব
-sm = st.sidebar.multiselect("Month", ml, default=st.session_state.month_selected)
-st.session_state.month_selected = sm
-if sm != ml: active_count += 1
-
-# Firm
-firm_list = sorted(raw["Firm Name"].dropna().unique())
-if 'firm_selected' not in st.session_state or st.session_state.firm_selected is None:
-    st.session_state.firm_selected = firm_list
-sf = st.sidebar.multiselect("Firm", firm_list, default=st.session_state.firm_selected)
-st.session_state.firm_selected = sf
-if sf != firm_list: active_count += 1
-
-# Our Bank
-bank_list = sorted(raw["Our Bank"].dropna().unique())
-if 'bank_selected' not in st.session_state or st.session_state.bank_selected is None:
-    st.session_state.bank_selected = bank_list
-sb = st.sidebar.multiselect("Our Bank", bank_list, default=st.session_state.bank_selected)
-st.session_state.bank_selected = sb
-if sb != bank_list: active_count += 1
-
-# Sales Person
-sales_persons = sorted(raw["Sales Person"].dropna().unique())
-ss_choices = (["(Blank)"] + sales_persons) if raw["Sales Person"].isna().any() else sales_persons
-if 'sales_selected' not in st.session_state or st.session_state.sales_selected is None:
-    st.session_state.sales_selected = ss_choices
-ss = st.sidebar.multiselect("Sales Person", ss_choices, default=st.session_state.sales_selected)
-st.session_state.sales_selected = ss
-if ss != ss_choices: active_count += 1
-
-# Party Name
-party_list = sorted(raw["Party Name"].dropna().unique())
-if 'party_selected' not in st.session_state or st.session_state.party_selected is None:
-    st.session_state.party_selected = party_list
-sparty = st.sidebar.multiselect("Party Name", party_list, default=st.session_state.party_selected)
-st.session_state.party_selected = sparty
-if sparty != party_list: active_count += 1
-
-# Date Range
-min_date = raw["_date"].min()
-max_date = raw["_date"].max()
-if pd.isna(min_date) or pd.isna(max_date):
-    default_date = (pd.Timestamp.today().date(), pd.Timestamp.today().date())
-else:
-    default_date = (min_date.date(), max_date.date())
-if 'date_selected' not in st.session_state or st.session_state.date_selected is None:
-    st.session_state.date_selected = default_date
-date_range = st.sidebar.date_input(
-    "Date Range",
-    value=st.session_state.date_selected,
-    min_value=min_date.date() if pd.notna(min_date) else None,
-    max_value=max_date.date() if pd.notna(max_date) else None
-)
-st.session_state.date_selected = date_range
-# ডেট রেঞ্জ ডিফল্ট থেকে আলাদা কিনা চেক করতে হবে পরে (যেহেতু টিউপল তুলনা কঠিন)
-
-st.sidebar.markdown("---")
-
-# --- ৪. এক্সট্রা ফিল্টার (Invoice Value Range) ---
-st.sidebar.markdown("### ➕ Extra Filter")
-inv_min_all = float(raw["Invoice Value"].min())
-inv_max_all = float(raw["Invoice Value"].max())
-if 'inv_range' not in st.session_state or st.session_state.inv_range is None:
-    st.session_state.inv_range = (inv_min_all, inv_max_all)
-inv_range = st.sidebar.slider(
-    "💰 Invoice Value Range",
-    min_value=inv_min_all,
-    max_value=inv_max_all,
-    value=st.session_state.inv_range,
-    step=100.0,
-    format="$%0.0f"
-)
-st.session_state.inv_range = inv_range
-if inv_range != (inv_min_all, inv_max_all): active_count += 1
-
-st.sidebar.markdown("---")
-
-# --- ৫. অ্যাকটিভ কাউন্টার আপডেট করা ---
-col2.metric("Active", active_count)
-
-# --- ৬. ডেটা ফিল্টার প্রয়োগ (পুরোনো লজিক + এক্সট্রা) ---
-df = raw.copy()
-
-if sm:     df = df[df["MonthSort"].astype(str).isin(sm)]
-if sf:     df = df[df["Firm Name"].isin(sf)]
-if sb:     df = df[df["Our Bank"].isin(sb)]
-if ss:
-    if "(Blank)" in ss:
-        sel = [s for s in ss if s != "(Blank)"]
-        df = df[(df["Sales Person"].isin(sel)) | df["Sales Person"].isna()]
-    else:
-        df = df[df["Sales Person"].isin(ss)]
-if sparty: df = df[df["Party Name"].isin(sparty)]
-if isinstance(date_range, tuple) and len(date_range) == 2:
-    s_d, e_d = date_range
-    df = df[(df["_date"].dt.date >= s_d) & (df["_date"].dt.date <= e_d)]
-
-# এক্সট্রা ফিল্টার (Invoice Value)
-min_inv, max_inv = inv_range
-df = df[(df["Invoice Value"] >= min_inv) & (df["Invoice Value"] <= max_inv)]
-
-st.sidebar.caption(f"Showing **{len(df):,}** of **{len(raw):,}** records")
-if df.empty: st.warning("No records match the filters."); st.stop()
 # ─────────────────────────────────────────────────────────────────────────────
 # PLOTLY THEME
 # ─────────────────────────────────────────────────────────────────────────────
@@ -650,11 +490,15 @@ with t_daily:
 
     st.markdown("---")
 
+    
     # ── Sales Person Performance ──────────────────────────────────────────
     spg_d = (df_daily[df_daily["Sales Person"].notna()]
                .groupby("Sales Person")
                .agg(Value=("Invoice Value","sum"), N=("LC No","count"))
                .reset_index().sort_values("Value", ascending=False))
+    
+    s1, s2 = st.columns(2)
+    
     if not spg_d.empty:
         sp_paid = (df_daily[df_daily["Payment. Rcv Dt"].notna() & df_daily["Sales Person"].notna()]
                      .groupby("Sales Person").size().reset_index(name="Paid"))
@@ -662,28 +506,35 @@ with t_daily:
         spg_d["Pct"] = (spg_d["Paid"] / spg_d["N"] * 100).round(1)
         total_val_d  = spg_d["Value"].sum()
         spg_d["% of Total"] = (spg_d["Value"] / total_val_d * 100).round(1).map(lambda x: f"{x:.1f}%")
-
-    s1, s2 = st.columns(2)
-    with s1:
-        sh("👤 Sales Person Performance")
-        sp_show = spg_d[["Sales Person","Value","N","Paid","Pct","% of Total"]].copy()
-        sp_show["Value"] = sp_show["Value"].map(lambda x: f"${x:,.2f}")
-        sp_show["Pct"]   = sp_show["Pct"].map(lambda x: f"{x:.1f}%")
-        sp_show["Paid"]  = sp_show["Paid"].astype(int)
-        sp_show.columns  = ["Sales Person","Invoice Value","Submissions","Paid","Pay Rate","% of Total"]
-        st.dataframe(sp_show, width='stretch', hide_index=True, height=360)
-    with s2:
-        sh("👤 Sales Person Chart")
-        fig_sp = px.bar(spg_d.head(12), x="Value", y="Sales Person", orientation="h",
-                        color="Sales Person", color_discrete_sequence=C,
-                        text=spg_d.head(12)["Value"].map(usd))
-        fig_sp.update_traces(textposition="outside", textfont_size=10)
-        fig_sp.update_layout(**PL_GENERAL,
-            xaxis=dict(title="Invoice Value (USD)", tickformat="$.2s", gridcolor="#1a2a3a"),
-            yaxis=dict(title="", autorange="reversed"),
-            showlegend=False, height=360)
-        st.plotly_chart(fig_sp, width='stretch')
-
+        
+        with s1:
+            sh("👤 Sales Person Performance")
+            sp_show = spg_d[["Sales Person","Value","N","Paid","Pct","% of Total"]].copy()
+            sp_show["Value"] = sp_show["Value"].map(lambda x: f"${x:,.2f}")
+            sp_show["Pct"]   = sp_show["Pct"].map(lambda x: f"{x:.1f}%")
+            sp_show["Paid"]  = sp_show["Paid"].astype(int)
+            sp_show.columns  = ["Sales Person","Invoice Value","Submissions","Paid","Pay Rate","% of Total"]
+            st.dataframe(sp_show, width='stretch', hide_index=True, height=360)
+        
+        with s2:
+            sh("👤 Sales Person Chart")
+            fig_sp = px.bar(spg_d.head(12), x="Value", y="Sales Person", orientation="h",
+                            color="Sales Person", color_discrete_sequence=C,
+                            text=spg_d.head(12)["Value"].map(usd))
+            fig_sp.update_traces(textposition="outside", textfont_size=10)
+            fig_sp.update_layout(
+                **PL_GENERAL,
+                xaxis=dict(title="Invoice Value (USD)", tickformat="$.2s", gridcolor="#1a2a3a"),
+                yaxis=dict(title="", autorange="reversed"),
+                showlegend=False, height=360
+            )
+            st.plotly_chart(fig_sp, width='stretch')
+    else:
+        with s1:
+            st.info("No Sales Person data available for the selected date.")
+        with s2:
+            st.info("No Sales Person data available for the selected date.")
+    
     st.markdown("---")
 
     # ── Tenor Distribution ────────────────────────────────────────────────
